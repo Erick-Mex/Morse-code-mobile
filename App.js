@@ -1,8 +1,18 @@
 import { StatusBar } from "expo-status-bar";
 import { useEffect, useState } from "react";
-import { StyleSheet, Text, View, SafeAreaView, TextInput, Button } from "react-native";
+import {
+  StyleSheet,
+  Text,
+  View,
+  SafeAreaView,
+  TextInput,
+  TouchableHighlight,
+} from "react-native";
 import tw from "twrnc";
-import morseSound from './assets/morseSound.mp3';
+import { Audio } from "expo-av";
+import dot from "./assets/dot.mp3";
+import dash from "./assets/dash.mp3";
+import Icon from "react-native-vector-icons/FontAwesome";
 
 const MORSE_MAP = {
   a: ".-", //A
@@ -31,28 +41,18 @@ const MORSE_MAP = {
   x: "-..-", //X
   y: "-.--", //Y
   z: "--..", //Z
-  ' ': '//' //space
+  " ": "//", //space
 };
 
-var Sound = require('react-native-sound')
-
-Sound.setCategory('Playback');
-
-var sound = new Sound('whoosh.mp3', Sound.MAIN_BUNDLE, (error) => {
-  if(error) {
-    console.log('failed to load the sound');
-    return;
-  }
-  console.log('duration in seconds' + sound.getDuration());
-
-  sound.play(() => {
-    sound.release();
-  })
-})
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
 
 export default function App() {
   const [Morse, setMorse] = useState("");
   const [sentence, setSentence] = useState("");
+  const sound = new Audio.Sound();
+  let query = [];
 
   const validateText = (word) => {
     const regExp = /^[a-zA-Z\s]+$/;
@@ -60,55 +60,56 @@ export default function App() {
     return result;
   };
 
-  const playAudio = () => {
-    /*
-    const t = CTX.currentTime;
+  const playAudio = async () => {
+    let MorseCodes = Morse.split("//");
 
-    const oscillator = CTX.createOscillator();
-    oscillator.type = 'sine';
-    oscillator.frequency.value = 600;
+    MorseCodes.map((code, index) => {
+      for (let i = 0; i < code.length; i++) {
+        let letter = code[i];
+        if (letter == ".") query.push(dot);
+        else query.push(dash);
+      }
 
-    const gainNode = CTX.createGain();
-    gainNode.gain.setValueAtTime(0, t);
+      if (index < MorseCodes.length - 1) query.push("space");
+    });
 
-    for(var i = 0; i < Morse.length; i++) {
-      let letter = Morse[i];
-      switch(letter) {
-        case ".":
-          gainNode.gain.setValueAtTime(1, t);
-          t += DOT;
-          gainNode.gain.setValueAtTime(0, t);
-          t += DOT;
-          break;
-        case "-":
-          gainNode.gain.setValueAtTime(1, t);
-          t += 3 * DOT;
-          gainNode.gain.setValueAtTime(0, t);
-          t += DOT;
-          break;
-        case " ":
-          t += 7 * DOT;
-          break;
+    let first = query.shift();
+    await sound.loadAsync(first);
+    await sound.playAsync();
+  };
+
+  sound.setOnPlaybackStatusUpdate(async (playbackStatus) => {
+    if (!playbackStatus.isLoaded) {
+      if (playbackStatus.error) console.log("Error: " + playbackStatus.error);
+    } else {
+      if (playbackStatus.didJustFinish) {
+        sound.unloadAsync();
+
+        if (query.length == 0) return;
+
+        let first = query.shift();
+        if (first == "space") {
+          await sleep(200);
+          first = query.shift();
+          await sound.loadAsync(first);
+          await sound.playAsync();
+        } else {
+          sleep(120); //sleep between dots and dashes
+          await sound.loadAsync(first);
+          await sound.playAsync();
+        }
       }
     }
-
-    oscillator.connect(gainNode);
-    gainNode.connect(CTX.destination);
-
-    oscillator.start();
-
-    return false;
-    */
-  }
+  });
 
   useEffect(() => {
     const text = sentence.toLowerCase();
     let result = "";
 
-    if (text.length == 0) setMorse("");
-    if (!validateText(text)) return;
+    if (text.length === 0) setMorse("");
+    if (!validateText(sentence)) return;
 
-    for(var i = 0; i < text.length; i++) {
+    for (var i = 0; i < text.length; i++) {
       let morseCode = MORSE_MAP[text[i]];
       result += morseCode;
     }
@@ -122,17 +123,49 @@ export default function App() {
       <View style={tw`m-4`}>
         <Text style={tw`font-bold text-lg`}>Write something:</Text>
         <TextInput
-          style={tw`border-solid border border-black rounded-lg p-2 mb-4`}
+          style={tw`border-solid border ${
+            !sentence || validateText(sentence)
+              ? "border-black"
+              : "border-red-400"
+          } rounded-lg p-2`}
           placeholder="example: SOS"
           onChangeText={(newText) => setSentence(newText)}
         />
-        <Button
-        title="Play"
-        onPress={playAudio}
-        />
+        {sentence && !validateText(sentence) ? (
+          <Text style={tw`text-red-400`}>Only use letters (a-z)</Text>
+        ) : null}
+        <View style={tw`my-4`}>
+          <TouchableHighlight style={tw`rounded-full`} onPress={playAudio}>
+            <View
+              style={[
+                tw`flex-row justify-center p-2 rounded-full`,
+                styles.button,
+              ]}
+            >
+              <Icon
+                name="play"
+                size={30}
+                style={styles.verticalCenter}
+                color={"#ffff"}
+              />
+              <Text style={[styles.verticalCenter, tw`text-lg p-1 text-white`]}>
+                Play
+              </Text>
+            </View>
+          </TouchableHighlight>
+        </View>
         <Text style={tw`font-bold text-lg`}>The Morse Code:</Text>
         <Text style={tw`text-xl`}>{Morse}</Text>
       </View>
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  verticalCenter: {
+    textAlignVertical: "center",
+  },
+  button: {
+    backgroundColor: "#75c4f9",
+  },
+});
